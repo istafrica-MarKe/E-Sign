@@ -26,11 +26,13 @@ export default function BankIdQrPage() {
   const [hintCode, setHintCode] = useState('');
   const [error, setError]     = useState('');
 
-  const orderRefRef      = useRef(null);
-  const qrIntervalRef    = useRef(null);
+  const orderRefRef        = useRef(null);
+  const qrIntervalRef      = useRef(null);
   const collectIntervalRef = useRef(null);
+  const doneRef            = useRef(false);
 
   useEffect(() => {
+    doneRef.current = false;
     initAuth();
     return cleanup;
   }, []);
@@ -38,21 +40,26 @@ export default function BankIdQrPage() {
   async function initAuth() {
     try {
       const { orderRef } = await startAuth();
+      if (doneRef.current) return; // component unmounted while awaiting
       orderRefRef.current = orderRef;
       setStatus('pending');
 
       // Refresh QR code every second (BankID requires this — the code is time-based)
       qrIntervalRef.current = setInterval(async () => {
+        if (doneRef.current) return;
         try {
           const { qrData } = await getQrData(orderRef);
+          if (doneRef.current) return;
           setQrData(qrData);
         } catch { /* silently ignore mid-flight errors */ }
       }, 1000);
 
       // Poll for result every 2 seconds (BankID enforces max once per 2s)
       collectIntervalRef.current = setInterval(async () => {
+        if (doneRef.current) return;
         try {
           const result = await collectAuth(orderRef);
+          if (doneRef.current) return;
 
           if (result.status === 'complete') {
             cleanup();
@@ -70,14 +77,18 @@ export default function BankIdQrPage() {
       }, 2000);
 
     } catch (err) {
+      if (doneRef.current) return;
       setStatus('failed');
       setError(err.message);
     }
   }
 
   function cleanup() {
+    doneRef.current = true;
     clearInterval(qrIntervalRef.current);
     clearInterval(collectIntervalRef.current);
+    qrIntervalRef.current = null;
+    collectIntervalRef.current = null;
   }
 
   async function handleCancel() {

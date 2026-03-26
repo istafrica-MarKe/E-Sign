@@ -43,6 +43,7 @@ export default function SignPage() {
   const orderRefRef        = useRef(null);
   const qrIntervalRef      = useRef(null);
   const collectIntervalRef = useRef(null);
+  const doneRef            = useRef(false);
 
   // Cleanup intervals on unmount
   useEffect(() => () => cleanup(), []);
@@ -78,6 +79,7 @@ export default function SignPage() {
   // ── Signing flow ───────────────────────────────────────────────────
 
   async function beginSigning() {
+    doneRef.current = false;
     setStep('signing');
     setSignStatus('starting');
     setQrData('');
@@ -88,21 +90,26 @@ export default function SignPage() {
       const { orderRef } = await startSigning(
         document.documentId, document.filename, document.hash
       );
+      if (doneRef.current) return;
       orderRefRef.current = orderRef;
       setSignStatus('pending');
 
       // Refresh QR every second
       qrIntervalRef.current = setInterval(async () => {
+        if (doneRef.current) return;
         try {
           const { qrData } = await getQrData(orderRef);
+          if (doneRef.current) return;
           setQrData(qrData);
         } catch { /* ignore */ }
       }, 1000);
 
       // Poll collect every 2 seconds
       collectIntervalRef.current = setInterval(async () => {
+        if (doneRef.current) return;
         try {
           const result = await collectSigning(orderRef);
+          if (doneRef.current) return;
 
           if (result.status === 'complete') {
             cleanup();
@@ -120,6 +127,7 @@ export default function SignPage() {
       }, 2000);
 
     } catch (err) {
+      if (doneRef.current) return;
       setSignStatus('failed');
       setError(err.message);
     }
@@ -133,8 +141,11 @@ export default function SignPage() {
   }
 
   function cleanup() {
+    doneRef.current = true;
     clearInterval(qrIntervalRef.current);
     clearInterval(collectIntervalRef.current);
+    qrIntervalRef.current = null;
+    collectIntervalRef.current = null;
   }
 
   // ── Render ─────────────────────────────────────────────────────────
